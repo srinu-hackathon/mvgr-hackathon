@@ -23,25 +23,27 @@ const colorMap = {
 };
 
 // Bookmark helpers using localStorage
-const BOOKMARKS_KEY = "studysphere_bookmarks";
+const BOOKMARKS_KEY = "studysphere_bookmarks_v2";
 
-export const getBookmarks = (): string[] => {
+export const getBookmarks = (): Resource[] => {
   try {
     return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || "[]");
   } catch { return []; }
 };
 
-export const isBookmarked = (id: string): boolean => getBookmarks().includes(id);
+export const isBookmarked = (id: string): boolean => {
+  return getBookmarks().some(b => b.id === id);
+};
 
-export const toggleBookmark = (id: string): boolean => {
+export const toggleBookmark = (resource: Resource): boolean => {
   const bookmarks = getBookmarks();
-  const index = bookmarks.indexOf(id);
+  const index = bookmarks.findIndex(b => b.id === resource.id);
   if (index > -1) {
     bookmarks.splice(index, 1);
     localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks));
     return false;
   } else {
-    bookmarks.push(id);
+    bookmarks.push(resource);
     localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks));
     return true;
   }
@@ -70,7 +72,7 @@ export default function ResourceCard({ resource, index }: { resource: Resource; 
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const saved = toggleBookmark(resource.id);
+    const saved = toggleBookmark(resource);
     setIsSaved(saved);
     toast({
       title: saved ? "Bookmarked" : "Removed",

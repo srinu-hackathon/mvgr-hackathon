@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Sparkles, Clock, GraduationCap, BrainCircuit, FileText, Zap, ArrowRight } from "lucide-react";
+import { Search, Sparkles, Clock, GraduationCap, BrainCircuit, FileText, Zap, ArrowRight, Heart } from "lucide-react";
 import { motion } from "framer-motion";
-import ResourceCard from "@/components/ResourceCard";
+import ResourceCard, { getBookmarks } from "@/components/ResourceCard";
 import SkeletonCard from "@/components/SkeletonCard";
 import { api } from "@/services/api";
+import type { Resource } from "@/types";
 
 const features = [
   {
@@ -45,11 +47,16 @@ const stats = [
 
 const HomePage = () => {
   const navigate = useNavigate();
+  const [bookmarks, setBookmarks] = useState<Resource[]>([]);
 
   const { data: resources = [], isLoading: loadingResources } = useQuery({
     queryKey: ["resources"],
     queryFn: () => api.getApprovedResources(),
   });
+
+  useEffect(() => {
+    setBookmarks(getBookmarks());
+  }, []);
 
   const recentResources = [...resources]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -141,34 +148,32 @@ const HomePage = () => {
 
 
 
-        {/* Recent Resources */}
+        {/* Favourites & Bookmarks */}
         <section>
           <div className="mb-3 flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-blue-500" />
-              <h2 className="text-xs font-black uppercase tracking-widest text-foreground">Recently Added</h2>
+              <Heart className="h-4 w-4 text-red-500 fill-red-500" />
+              <h2 className="text-xs font-black uppercase tracking-widest text-foreground">Favourites</h2>
             </div>
             <button onClick={() => navigate("/search")} className="text-[10px] font-bold text-primary">
-              Explore →
+              Explore More →
             </button>
           </div>
           <div className="space-y-3">
-            {loadingResources ? (
-              Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
-            ) : recentResources.length > 0 ? (
-              recentResources.map((r, i) => <ResourceCard key={r.id} resource={r} index={i} />)
+            {bookmarks.length > 0 ? (
+              bookmarks.map((r, i) => <ResourceCard key={r.id} resource={r} index={i} />)
             ) : (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                onClick={() => navigate("/upload")}
+                onClick={() => navigate("/search")}
                 className="cursor-pointer text-center py-10 bg-card rounded-2xl border border-dashed border-border hover:border-primary/30 transition-all"
               >
-                <Search className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-xs font-bold text-muted-foreground">No resources yet</p>
-                <p className="text-[10px] text-muted-foreground mt-1">Be the first to upload study materials</p>
+                <Heart className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-xs font-bold text-muted-foreground">No favourites yet</p>
+                <p className="text-[10px] text-muted-foreground mt-1">Bookmark any resource to see it here</p>
                 <span className="inline-flex items-center gap-1 mt-3 text-[10px] font-bold text-primary">
-                  Upload Now <ArrowRight className="h-3 w-3" />
+                  Start Discovering <ArrowRight className="h-3 w-3" />
                 </span>
               </motion.div>
             )}

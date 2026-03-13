@@ -8,9 +8,25 @@ import ResourceCard from "@/components/ResourceCard";
 import { api } from "@/services/api";
 import { searchGlobalKnowledge, DiscoveryResult, getSearchSuggestions } from "@/services/discovery";
 import { generateExplanation } from "@/services/ai";
-import type { ResourceType } from "@/types";
+import type { Resource, ResourceType } from "@/types";
 
 type TypeFilter = "all" | ResourceType | "global";
+
+// Helper to transform discovery results to standard resource type for UI
+const mapDiscoveryToResource = (dr: DiscoveryResult): Resource => ({
+  id: dr.id,
+  title: dr.title,
+  description: dr.description,
+  url: dr.url,
+  type: (dr.type === "link" ? "oer" : dr.type) as ResourceType,
+  author: dr.author || dr.source || "External",
+  source: dr.source,
+  topicId: "", // Not applicable for external results
+  rating: 0,
+  upvotes: 0,
+  status: "approved",
+  createdAt: new Date().toISOString(),
+});
 
 const typeFilters: { id: TypeFilter; label: string; icon?: any }[] = [
   { id: "all", label: "All Local" },
@@ -591,38 +607,20 @@ const SearchPage = () => {
                     </section>
                   )}
 
-                  {/* PDF Notes & Research Papers */}
+                  {/* Scientific Results (arXiv + OpenAlex) */}
                   {(typeFilter === "global" || typeFilter === "pdf" || typeFilter === "notes") && (sortedDocs.pdfs.length > 0 || discoveryResults.research.length > 0) && (
                     <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                       <div className="flex items-center gap-2 mb-3">
-                        <FileText className="h-5 w-5 text-blue-600" />
-                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Notes & Research Papers</h3>
+                        <FileText className="h-5 w-5 text-blue-500" />
+                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Papers & Preprints</h3>
                         <span className="ml-auto text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded-full">arXiv</span>
                       </div>
-                      <div className="space-y-2.5">
-                        {sortedDocs.pdfs.map(p => (
-                          <a key={p.id} href={p.url} target="_blank" rel="noreferrer"
-                            className="block bg-card rounded-xl p-4 border border-border hover:border-blue-500/20 transition-all">
-                            <div className="flex justify-between items-start gap-2 mb-1.5">
-                              <h4 className="text-sm font-bold text-foreground line-clamp-1">{p.title}</h4>
-                              <div className="h-6 w-10 bg-blue-50 text-blue-600 rounded flex items-center justify-center text-[9px] font-black shrink-0">PDF</div>
-                            </div>
-                            <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">{p.description}</p>
-                            <div className="flex justify-between mt-2 pt-2 border-t border-border/50 text-[10px]">
-                              <span className="font-bold text-muted-foreground italic truncate">{p.author}</span>
-                              <span className="text-primary font-bold ml-2">Open →</span>
-                            </div>
-                          </a>
+                      <div className="space-y-3">
+                        {sortedDocs.pdfs.map((p, i) => (
+                          <ResourceCard key={p.id} resource={mapDiscoveryToResource(p)} index={i} />
                         ))}
-                        {discoveryResults.research.map(p => (
-                          <a key={p.id} href={p.url} target="_blank" rel="noreferrer"
-                            className="flex items-center gap-3 bg-card rounded-xl px-4 py-3 border border-border hover:border-primary/20 transition-all">
-                            <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-[8px] font-black shrink-0">PAPER</div>
-                            <div className="min-w-0">
-                              <h4 className="text-[11px] font-bold text-foreground line-clamp-1">{p.title}</h4>
-                              <p className="text-[9px] text-muted-foreground">{p.author} • {p.year}</p>
-                            </div>
-                          </a>
+                        {discoveryResults.research.map((p, i) => (
+                          <ResourceCard key={p.id} resource={mapDiscoveryToResource(p)} index={i} />
                         ))}
                       </div>
                     </section>
@@ -637,18 +635,8 @@ const SearchPage = () => {
                         <span className="ml-auto text-[10px] bg-green-50 text-green-600 font-bold px-2 py-0.5 rounded-full">Live</span>
                       </div>
                       <div className="space-y-3">
-                        {discoveryResults.webResults.map(r => (
-                          <a key={r.id} href={r.url} target="_blank" rel="noreferrer"
-                            className="block bg-card rounded-xl px-4 py-3.5 border border-border hover:border-primary/20 hover:shadow-sm transition-all group">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <span className="text-[11px] text-green-600 font-medium truncate">{r.source}</span>
-                              {r.isVerified && (
-                                <span className="text-[8px] bg-green-100 text-green-700 font-black px-1.5 py-0.5 rounded uppercase">.EDU</span>
-                              )}
-                            </div>
-                            <h4 className="text-sm font-bold text-blue-600 group-hover:underline line-clamp-1 mb-1">{r.title}</h4>
-                            <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">{r.description}</p>
-                          </a>
+                        {discoveryResults.webResults.map((r, i) => (
+                          <ResourceCard key={r.id} resource={mapDiscoveryToResource(r)} index={i} />
                         ))}
                       </div>
                     </section>

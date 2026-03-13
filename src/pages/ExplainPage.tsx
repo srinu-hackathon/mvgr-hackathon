@@ -1,9 +1,11 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Loader2, ChevronLeft, Copy, CheckCircle2 } from "lucide-react";
+import { Sparkles, Loader2, ChevronLeft, Copy, CheckCircle2, Bookmark } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import { generateExplanation } from "@/services/ai";
+import { isBookmarked, toggleBookmark } from "@/components/ResourceCard";
+import type { Resource } from "@/types";
 
 const MODES = [
     { id: "simple", label: "Simple", prompt: "Explain this in very simple terms a beginner would understand" },
@@ -28,6 +30,7 @@ const ExplainPage = () => {
     const [explanation, setExplanation] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [isSaved, setIsSaved] = useState(false);
 
     const handleExplain = useCallback(async (overrideQuery?: string) => {
         const q = overrideQuery || query;
@@ -55,6 +58,26 @@ Format your response with clear paragraphs. Use bullet points for lists. Keep it
         navigator.clipboard.writeText(explanation);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+    };
+
+    const handleSave = () => {
+        if (!explanation || !query) return;
+        const res: Resource = {
+            id: `ai_explain_${Date.now()}`,
+            title: `Explanation: ${query}`,
+            description: explanation.substring(0, 100) + "...",
+            url: "",
+            type: "notes",
+            author: "Study Sphere AI",
+            source: "AI Explain",
+            topicId: "",
+            rating: 5,
+            upvotes: 0,
+            status: "approved",
+            createdAt: new Date().toISOString()
+        };
+        const saved = toggleBookmark(res);
+        setIsSaved(saved);
     };
 
     return (
@@ -149,9 +172,14 @@ Format your response with clear paragraphs. Use bullet points for lists. Keep it
                                         <Sparkles className="h-4 w-4 text-primary" />
                                         <span className="text-[10px] font-black uppercase tracking-widest text-primary">AI Explanation</span>
                                     </div>
-                                    <button onClick={copyToClipboard} className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-foreground transition-colors">
-                                        {copied ? <><CheckCircle2 className="h-3 w-3 text-green-500" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
-                                    </button>
+                                    <div className="flex items-center gap-3">
+                                        <button onClick={handleSave} className={`flex items-center gap-1 text-[10px] font-bold transition-colors ${isSaved ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
+                                            <Bookmark className={`h-3 w-3 ${isSaved ? "fill-primary" : ""}`} /> {isSaved ? "Saved" : "Save"}
+                                        </button>
+                                        <button onClick={copyToClipboard} className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-foreground transition-colors">
+                                            {copied ? <><CheckCircle2 className="h-3 w-3 text-green-500" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
                                     {explanation}
