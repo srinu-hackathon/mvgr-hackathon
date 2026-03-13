@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Search, Sparkles, Clock, GraduationCap, BrainCircuit, FileText, Zap, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
-import TopicCard from "@/components/TopicCard";
 import ResourceCard from "@/components/ResourceCard";
 import SkeletonCard from "@/components/SkeletonCard";
 import { api } from "@/services/api";
@@ -47,17 +46,11 @@ const stats = [
 const HomePage = () => {
   const navigate = useNavigate();
 
-  const { data: topics = [], isLoading: loadingTopics } = useQuery({
-    queryKey: ["topics"],
-    queryFn: () => api.getTopics(),
-  });
-
   const { data: resources = [], isLoading: loadingResources } = useQuery({
     queryKey: ["resources"],
     queryFn: () => api.getApprovedResources(),
   });
 
-  const trendingTopics = topics.slice(0, 3);
   const recentResources = [...resources]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 3);
@@ -79,8 +72,8 @@ const HomePage = () => {
               Study Sphere
             </h1>
           </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 backdrop-blur-md">
-            <GraduationCap className="h-6 w-6 text-white" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 backdrop-blur-md overflow-hidden border border-white/20">
+            <img src="/favicon.png" className="h-full w-full object-cover" alt="Logo" />
           </div>
         </motion.div>
 
@@ -146,25 +139,7 @@ const HomePage = () => {
           </div>
         </section>
 
-        {/* Trending Topics */}
-        <section>
-          <div className="mb-3 flex items-center gap-2 px-1">
-            <FileText className="h-4 w-4 text-blue-500" />
-            <h2 className="text-xs font-black uppercase tracking-widest text-foreground">Trending Topics</h2>
-          </div>
-          <div className="space-y-2">
-            {loadingTopics ? (
-              Array.from({ length: 2 }).map((_, i) => <SkeletonCard key={i} />)
-            ) : trendingTopics.length > 0 ? (
-              trendingTopics.map((t, i) => <TopicCard key={t.id} topic={t} index={i} />)
-            ) : (
-              <div className="text-center py-8 text-xs text-muted-foreground">
-                <p className="font-bold">No trending topics yet</p>
-                <p className="mt-1">Topics will appear once activity begins.</p>
-              </div>
-            )}
-          </div>
-        </section>
+
 
         {/* Recent Resources */}
         <section>

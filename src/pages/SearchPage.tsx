@@ -6,7 +6,7 @@ import PageHeader from "@/components/PageHeader";
 import TopicCard from "@/components/TopicCard";
 import ResourceCard from "@/components/ResourceCard";
 import { api } from "@/services/api";
-import { searchGlobalKnowledge, DiscoveryResult } from "@/services/discovery";
+import { searchGlobalKnowledge, DiscoveryResult, getSearchSuggestions } from "@/services/discovery";
 import { generateExplanation } from "@/services/ai";
 import type { ResourceType } from "@/types";
 
@@ -21,15 +21,7 @@ const typeFilters: { id: TypeFilter; label: string; icon?: any }[] = [
   { id: "ppt", label: "PPT" },
 ];
 
-const SCAN_PROVIDERS = [
-  "MVGR College Bank",
-  "NASA / arXiv Papers",
-  "OpenAlex Database",
-  "YouTube Education",
-  "OpenStax Textbooks",
-  "Google / Bing Web Search",
-  "PDF & Document Search",
-];
+
 
 // Example context prompts to inspire users
 const CONTEXT_EXAMPLES = [
@@ -62,7 +54,7 @@ interface ParsedContext {
 
 const SearchPage = () => {
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("global");
   const [discoveryResults, setDiscoveryResults] = useState<DiscoveryState | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [isDiscovering, setIsDiscovering] = useState(false);
@@ -76,16 +68,42 @@ const SearchPage = () => {
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const contextInputRef = useRef<HTMLInputElement>(null);
 
+  // Autocomplete state
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to close suggestions
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Fetch suggestions as user types
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      if (query.length < 2) {
+        setSuggestions([]);
+        return;
+      }
+      const results = await getSearchSuggestions(query);
+      setSuggestions(results);
+    };
+
+    const timer = setTimeout(fetchSuggestions, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
   // Animate scanning dashboard steps
   useEffect(() => {
     if (!isDiscovering) { setScanStep(0); return; }
-    let step = 0;
-    const interval = setInterval(() => {
-      step++;
-      setScanStep(step);
-      if (step >= SCAN_PROVIDERS.length) clearInterval(interval);
-    }, 400);
-    return () => clearInterval(interval);
+    // We removed the individual provider tags to make the UI simpler
+    setScanStep(1);
   }, [isDiscovering]);
 
   // Categorize documents from discovery results
@@ -161,7 +179,7 @@ const SearchPage = () => {
 
       setDiscoveryResults(results as DiscoveryState);
       setAiSummary(summary);
-      setTypeFilter("global");
+      setTypeFilter(typeFilter === "global" ? "global" : typeFilter);
     } catch (err) {
       console.error("Discovery Engine error:", err);
     } finally {
@@ -188,38 +206,75 @@ const SearchPage = () => {
       <PageHeader title="Discovery" />
       <div className="p-4 space-y-3">
 
-        {/* Main Search Box */}
-        <div className="rounded-2xl bg-card border border-border shadow-sm overflow-hidden focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition-all">
-          <div className="flex items-center gap-3 px-4 py-3.5">
-            <Search className="h-5 w-5 text-muted-foreground shrink-0" />
-            <input
-              type="text"
-              placeholder="Search any topic, subject, concept..."
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleDiscovery()}
-              className="flex-1 bg-transparent text-sm font-medium text-foreground placeholder:text-muted-foreground outline-none"
-            />
-            {query && (
-              <button onClick={() => { setQuery(""); setDiscoveryResults(null); setAiSummary(null); setTypeFilter("all"); }}>
-                <X className="h-4 w-4 text-muted-foreground" />
-              </button>
-            )}
-          </div>
+        <div className="relative" ref={searchContainerRef}>
+          <div className="rounded-2xl bg-card border border-border shadow-sm overflow-hidden focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition-all">
+            <div className="flex items-center gap-3 px-4 py-3.5">
+              <Search className="h-5 w-5 text-muted-foreground shrink-0" />
+              <input
+                type="text"
+                placeholder="Search any topic, subject, concept..."
+                value={query}
+                onChange={e => {
+                  setQuery(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    handleDiscovery();
+                    setShowSuggestions(false);
+                  }
+                }}
+                className="flex-1 bg-transparent text-sm font-medium text-foreground placeholder:text-muted-foreground outline-none"
+              />
+              {query && (
+                <button onClick={() => { setQuery(""); setSuggestions([]); setDiscoveryResults(null); setAiSummary(null); setTypeFilter("global"); }}>
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              )}
+            </div>
 
-          {/* "Who are you?" trigger */}
-          <div
-            onClick={() => { setShowContextInput(p => !p); setTimeout(() => contextInputRef.current?.focus(), 100); }}
-            className="flex items-center gap-2 px-4 py-2 border-t border-border/50 cursor-pointer hover:bg-muted/20 transition-colors select-none"
-          >
-            <User2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="text-[11px] font-bold text-muted-foreground flex-1 truncate">
-              {parsedContext
-                ? `🎯 ${parsedContext.level} • ${parsedContext.domain}`
-                : "Tell us about yourself for personalized results"}
-            </span>
-            {parsedContext && <div className="h-2 w-2 rounded-full bg-primary shrink-0 animate-pulse" />}
-            <span className="text-[10px] text-primary font-bold shrink-0">{showContextInput ? "Done" : "Edit"}</span>
+            {/* Autocomplete Dropdown */}
+            <AnimatePresence>
+              {showSuggestions && suggestions.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute left-0 right-0 top-full mt-2 z-50 bg-card border border-border rounded-xl shadow-lg overflow-hidden py-1"
+                >
+                  {suggestions.map((suggestion, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setQuery(suggestion);
+                        setShowSuggestions(false);
+                        handleDiscovery(suggestion);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors group"
+                    >
+                      <Search className="h-3 w-3 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+                      {suggestion}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* "Who are you?" trigger */}
+            <div
+              onClick={() => { setShowContextInput(p => !p); setTimeout(() => contextInputRef.current?.focus(), 100); }}
+              className="flex items-center gap-2 px-4 py-2 border-t border-border/50 cursor-pointer hover:bg-muted/20 transition-colors select-none"
+            >
+              <User2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-[11px] font-bold text-muted-foreground flex-1 truncate">
+                {parsedContext
+                  ? `🎯 ${parsedContext.level} • ${parsedContext.domain}`
+                  : "Tell us about yourself for personalized results"}
+              </span>
+              {parsedContext && <div className="h-2 w-2 rounded-full bg-primary shrink-0 animate-pulse" />}
+              <span className="text-[10px] text-primary font-bold shrink-0">{showContextInput ? "Done" : "Edit"}</span>
+            </div>
           </div>
         </div>
 
@@ -347,7 +402,7 @@ const SearchPage = () => {
                   key={f.id}
                   onClick={() => {
                     setTypeFilter(f.id);
-                    if (f.id !== "all" && !discoveryResults) handleDiscovery();
+                    if (!discoveryResults) handleDiscovery();
                   }}
                   className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-xs font-bold transition-all ${typeFilter === f.id
                     ? "gradient-primary text-primary-foreground shadow-lg"
@@ -397,21 +452,11 @@ const SearchPage = () => {
                         Live Scan {parsedContext && `— ${parsedContext.level}`}
                       </span>
                     </div>
-                    <div className="space-y-2">
-                      {SCAN_PROVIDERS.map((p, i) => (
-                        <div key={p} className="flex items-center gap-3">
-                          <div className={`h-5 w-5 flex items-center justify-center ${i < scanStep ? "text-green-500" : i === scanStep ? "text-primary animate-pulse" : "text-muted-foreground/30"}`}>
-                            {i < scanStep ? <CheckCircle2 className="h-4 w-4" />
-                              : i === scanStep ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                : <div className="h-3 w-3 rounded-full border border-current" />}
-                          </div>
-                          <span className={`text-xs font-bold ${i < scanStep ? "text-foreground" : i === scanStep ? "text-primary" : "text-muted-foreground/40"}`}>
-                            {p}
-                          </span>
-                          {i < scanStep && <span className="text-[10px] text-green-500 font-bold ml-auto">Done</span>}
-                          {i === scanStep && <span className="text-[10px] text-primary font-bold ml-auto animate-pulse">Scanning...</span>}
-                        </div>
-                      ))}
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                      <span className="text-sm font-bold text-foreground">
+                        Scanning Academic Databases...
+                      </span>
                     </div>
                   </motion.div>
                 )}
@@ -442,44 +487,14 @@ const SearchPage = () => {
                 </motion.div>
               )}
 
-              {/* Local College Results */}
-              {typeFilter !== "global" && (
-                <>
-                  {localResults.topics.length > 0 && (
-                    <section>
-                      <h3 className="mb-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground">College Topics</h3>
-                      <div className="space-y-2">{localResults.topics.map((t, i) => <TopicCard key={t.id} topic={t} index={i} />)}</div>
-                    </section>
-                  )}
-                  {localResults.resources.length > 0 && (
-                    <section>
-                      <h3 className="mb-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Verified College Files</h3>
-                      <div className="space-y-3">{localResults.resources.map((r, i) => <ResourceCard key={r.id} resource={r} index={i} />)}</div>
-                    </section>
-                  )}
-                  {localResults.topics.length === 0 && localResults.resources.length === 0 && !isDiscovering && (
-                    <div className="py-12 text-center animate-in fade-in">
-                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50 text-muted-foreground">
-                        <FolderSearch className="h-8 w-8" />
-                      </div>
-                      <p className="text-sm font-medium text-muted-foreground">No matching local resources.</p>
-                      <button
-                        onClick={() => { setTypeFilter("global"); handleDiscovery(); }}
-                        className="mt-4 inline-flex items-center gap-2 rounded-full gradient-primary px-6 py-2.5 text-xs font-bold text-primary-foreground shadow-lg transition-all active:scale-95"
-                      >
-                        <Globe className="h-3.5 w-3.5" /> Explore Global Knowledge →
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
 
-              {/* Enterprise Discovery Results */}
-              {typeFilter === "global" && !isDiscovering && discoveryResults && (
+
+              {/* Main Discovery Results */}
+              {!isDiscovering && discoveryResults && (
                 <div className="space-y-6 pb-10">
 
                   {/* Videos */}
-                  {discoveryResults.videos.length > 0 && (
+                  {(typeFilter === "global" || typeFilter === "video") && discoveryResults.videos.length > 0 && (
                     <section className="animate-in fade-in slide-in-from-bottom-4">
                       <div className="flex items-center gap-2 mb-3">
                         <Youtube className="h-5 w-5 text-red-500" />
@@ -498,17 +513,38 @@ const SearchPage = () => {
                             </div>
                             <div className="min-w-0 py-1">
                               <h4 className="text-sm font-bold text-foreground line-clamp-1">{v.title}</h4>
-                              <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{v.description}</p>
-                              <div className="text-[9px] font-bold text-red-500 mt-1.5">{v.author}</div>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <div className="text-[9px] font-bold text-red-500">{v.author}</div>
+                                {v.stats && (
+                                  <>
+                                    <span className="text-[8px] text-muted-foreground/30">•</span>
+                                    <div className="text-[9px] font-medium text-muted-foreground flex items-center gap-1">
+                                      <span>{v.stats.views} views</span>
+                                    </div>
+                                    {v.stats.likes !== "0" && (
+                                      <>
+                                        <span className="text-[8px] text-muted-foreground/30">•</span>
+                                        <div className="text-[9px] font-medium text-muted-foreground flex items-center gap-1">
+                                          <span>{v.stats.likes} likes</span>
+                                        </div>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </a>
                         ))}
                       </div>
+                      <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`} target="_blank" rel="noreferrer"
+                        className="mt-3 block w-full text-center py-2.5 bg-red-50 text-red-600 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors">
+                        View more videos on YouTube →
+                      </a>
                     </section>
                   )}
 
                   {/* Verified Textbooks */}
-                  {sortedDocs.textbooks.length > 0 && (
+                  {typeFilter === "global" && sortedDocs.textbooks.length > 0 && (
                     <section className="animate-in fade-in slide-in-from-bottom-4 duration-200">
                       <div className="flex items-center gap-2 mb-3">
                         <BookText className="h-5 w-5 text-primary" />
@@ -534,7 +570,7 @@ const SearchPage = () => {
                   )}
 
                   {/* PPT Slides */}
-                  {sortedDocs.ppts.length > 0 && (
+                  {(typeFilter === "global" || typeFilter === "ppt") && sortedDocs.ppts.length > 0 && (
                     <section className="animate-in fade-in slide-in-from-bottom-4 duration-300">
                       <div className="flex items-center gap-2 mb-3">
                         <BookOpen className="h-5 w-5 text-orange-500" />
@@ -556,7 +592,7 @@ const SearchPage = () => {
                   )}
 
                   {/* PDF Notes & Research Papers */}
-                  {(sortedDocs.pdfs.length > 0 || discoveryResults.research.length > 0) && (
+                  {(typeFilter === "global" || typeFilter === "pdf" || typeFilter === "notes") && (sortedDocs.pdfs.length > 0 || discoveryResults.research.length > 0) && (
                     <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                       <div className="flex items-center gap-2 mb-3">
                         <FileText className="h-5 w-5 text-blue-600" />
@@ -593,7 +629,7 @@ const SearchPage = () => {
                   )}
 
                   {/* Google-style Web Results */}
-                  {discoveryResults.webResults && discoveryResults.webResults.length > 0 && (
+                  {typeFilter === "global" && discoveryResults.webResults && discoveryResults.webResults.length > 0 && (
                     <section className="animate-in fade-in slide-in-from-bottom-4 duration-700">
                       <div className="flex items-center gap-2 mb-3">
                         <Globe className="h-5 w-5 text-green-600" />
@@ -618,35 +654,8 @@ const SearchPage = () => {
                     </section>
                   )}
 
-                  {/* Deep Search Shortcuts */}
-                  <div className="pt-6 border-t border-border/50">
-                    <div className="bg-gradient-to-br from-primary/5 to-card rounded-2xl p-5 border border-primary/10">
-                      <div className="flex items-center gap-3 mb-4">
-                        <Sparkles className="h-4 w-4 text-primary" />
-                        <div>
-                          <h3 className="text-sm font-black text-foreground">Deep Search Shortcuts</h3>
-                          <p className="text-[10px] text-muted-foreground">Expert-filtered access to elite repositories</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { label: "NPTEL / India Edu", sublabel: "Govt. Verified Notes", color: "text-primary", href: `https://www.google.com/search?q=site:nptel.ac.in+${encodeURIComponent(q)}+filetype:pdf` },
-                          { label: "MIT / Stanford", sublabel: "Ivy League Courseware", color: "text-red-600", href: `https://www.google.com/search?q=site:ocw.mit.edu+OR+site:stanford.edu+${encodeURIComponent(q)}+filetype:pdf` },
-                          { label: "SlideShare", sublabel: "Visual Slide Decks", color: "text-blue-600", href: `https://www.slideshare.net/search?q=${encodeURIComponent(q)}` },
-                          { label: "Direct PDFs", sublabel: "Lecture Notes", color: "text-green-600", href: `https://www.google.com/search?q=${encodeURIComponent(q)}+"lecture+notes"+filetype:pdf` },
-                        ].map(sh => (
-                          <a key={sh.label} href={sh.href} target="_blank" rel="noreferrer"
-                            className="flex flex-col gap-0.5 bg-card p-3 rounded-xl border border-border hover:border-primary/30 hover:shadow-sm transition-all active:scale-95">
-                            <div className={`text-[10px] font-black uppercase ${sh.color}`}>{sh.label}</div>
-                            <div className="text-[10px] font-bold text-foreground">{sh.sublabel}</div>
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
-
             </motion.div>
           ) : null}
         </AnimatePresence>

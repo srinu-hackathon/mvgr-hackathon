@@ -18,6 +18,10 @@ export interface DiscoveryResult {
     author?: string;
     year?: string;
     isVerified?: boolean;
+    stats?: {
+        views?: string;
+        likes?: string;
+    };
 }
 
 export interface QueryBlueprint {
@@ -220,18 +224,52 @@ class YouTubeProvider implements IDiscoveryProvider {
     async search(query: string): Promise<DiscoveryResult[]> {
         if (!this.apiKey) return [];
         try {
-            const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query + " lecture tutorial")}&maxResults=3&type=video&key=${this.apiKey}`);
-            const data = await response.json();
-            return (data.items || []).map((item: any) => ({
-                id: item.id.videoId,
-                title: item.snippet.title,
-                description: item.snippet.description,
-                url: `https://youtube.com/watch?v=${item.id.videoId}`,
-                source: "YouTube",
-                type: "video" as const,
-                thumbnail: item.snippet.thumbnails?.medium?.url,
-                author: item.snippet.channelTitle
-            }));
+            // 1. Search for videos
+            const searchResponse = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query + " lecture tutorial")}&maxResults=3&type=video&key=${this.apiKey}`);
+            const searchData = await searchResponse.json();
+            const items = searchData.items || [];
+
+            if (items.length === 0) return [];
+
+            // 2. Get statistics (views, likes) for these specific videos
+            const videoIds = items.map((item: any) => item.id.videoId).join(',');
+            const statsResponse = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${videoIds}&key=${this.apiKey}`);
+            const statsData = await statsResponse.json();
+
+            // Map stats by video ID
+            const statsMap: Record<string, any> = {};
+            (statsData.items || []).forEach((item: any) => {
+                statsMap[item.id] = item.statistics;
+            });
+
+            // Formatter for large numbers (e.g. 1500000 -> 1.5M)
+            const formatNum = (numStr: string) => {
+                if (!numStr) return "0";
+                const num = parseInt(numStr, 10);
+                if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
+                if (num >= 1000) return (num / 1000).toFixed(1) + "K";
+                return num.toString();
+            };
+
+            return items.map((item: any) => {
+                const videoId = item.id.videoId;
+                const stats = statsMap[videoId] || {};
+
+                return {
+                    id: videoId,
+                    title: item.snippet.title,
+                    description: item.snippet.description,
+                    url: `https://youtube.com/watch?v=${videoId}`,
+                    source: "YouTube",
+                    type: "video" as const,
+                    thumbnail: item.snippet.thumbnails?.medium?.url,
+                    author: item.snippet.channelTitle,
+                    stats: {
+                        views: formatNum(stats.viewCount),
+                        likes: formatNum(stats.likeCount)
+                    }
+                };
+            });
         } catch {
             return [];
         }
@@ -263,6 +301,62 @@ class OpenStaxProvider implements IDiscoveryProvider {
     }
 }
 
+/**
+ * Google Search Provider - Official Google Custom Search JSON API
+ */
+class GoogleSearchProvider implements IDiscoveryProvider {
+    name = "Google Search";
+    private apiKey = import.meta.env.VITE_GOOGLE_SEARCH_API_KEY || "";
+    private cseId = import.meta.env.VITE_GOOGLE_CSE_ID || "";
+
+    async search(query: string, typeFilter?: string): Promise<DiscoveryResult[]> {
+        if (!this.apiKey || !this.cseId) return [];
+
+        try {
+            let q = query;
+            if (typeFilter === "pdf" || typeFilter === "notes") q += " filetype:pdf";
+            if (typeFilter === "ppt") q += " filetype:ppt OR filetype:pptx";
+
+            const response = await fetch(`https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(q)}&cx=${this.cseId}&key=${this.apiKey}`);
+            const data = await response.json();
+
+            if (!data.items) return [];
+
+            return data.items.map((item: any, i: number) => {
+                const urlLower = (item.link || "").toLowerCase();
+                const isPdf = urlLower.includes(".pdf");
+                const isPpt = urlLower.includes(".ppt") || urlLower.includes(".pptx");
+
+                return {
+                    id: `google-${i}-${Date.now()}`,
+                    title: item.title,
+                    description: item.snippet,
+                    url: item.link,
+                    source: new URL(item.link).hostname.replace("www.", ""),
+                    type: isPdf ? "pdf" : isPpt ? "ppt" : "link",
+                    isVerified: urlLower.includes(".edu") || urlLower.includes(".ac.")
+                };
+            });
+        } catch {
+            return [];
+        }
+    }
+}
+
+/**
+ * Google Autocomplete API - Real-time suggestions
+ */
+export const getSearchSuggestions = async (query: string): Promise<string[]> => {
+    if (!query || query.length < 2) return [];
+    try {
+        const response = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(query)}`);
+        const data = await response.json();
+        return data[1] || []; // Index 1 contains the array of suggestions
+    } catch {
+        return [];
+    }
+};
+
 // --- Core Discovery Engine ---
 
 export class DiscoveryEngine {
@@ -272,19 +366,21 @@ export class DiscoveryEngine {
     private openStax = new OpenStaxProvider();
     private webSearch = new WebSearchProvider();
     private docSearch = new DocumentSearchProvider();
+    private googleSearch = new GoogleSearchProvider();
 
     /**
      * Parallel Discovery Execution
      */
     async discover(query: string) {
         // Execute all providers in parallel for maximum speed
-        const [research, citations, videos, textbooks, webResults, documents] = await Promise.all([
+        const [research, citations, videos, textbooks, webResults, documents, googleResults] = await Promise.all([
             this.arXiv.search(query),
             this.openAlex.search(query),
             this.youtube.search(query),
             this.openStax.search(query),
             this.webSearch.search(query),
             this.docSearch.search(query),
+            this.googleSearch.search(query),
         ]);
 
         return {
@@ -292,9 +388,10 @@ export class DiscoveryEngine {
             citations,
             videos,
             textbooks,
-            documents: [...documents, ...webResults.filter(r => r.type === "pdf" || r.type === "ppt")],
-            webResults,
-            totalCount: research.length + citations.length + videos.length + textbooks.length + webResults.length + documents.length
+            googleResults,
+            documents: [...documents, ...googleResults.filter(r => r.type === "pdf" || r.type === "ppt"), ...webResults.filter(r => r.type === "pdf" || r.type === "ppt")],
+            webResults: [...googleResults.filter(r => r.type === "link"), ...webResults],
+            totalCount: research.length + citations.length + videos.length + textbooks.length + webResults.length + documents.length + googleResults.length
         };
     }
 }
