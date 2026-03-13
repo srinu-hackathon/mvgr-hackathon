@@ -122,7 +122,7 @@ export const api = {
     },
 
     // MUTATIONS
-    uploadResource: async (r: Omit<Resource, "id" | "rating" | "upvotes" | "createdAt" | "status">): Promise<void> => {
+    uploadResource: async (r: Omit<Resource, "id" | "rating" | "upvotes" | "createdAt" | "status"> & { subjectName?: string; topicName?: string }): Promise<void> => {
         if (mockSupabaseFallback) {
             await delay(800);
             const res: Resource = {
@@ -137,10 +137,57 @@ export const api = {
             setStored(KEYS.RESOURCES, [res, ...list]);
             return;
         }
-        // In physical Supabase, we would normally resolve the topic name to an ID
-        // For hackathon speed, we'll try to insert the string directly if the DB allows or use a default
+
+        let topicId = r.topicId;
+
+        // If names are provided, we attempt to resolve/create them to satisfy UUID constraints
+        if (r.subjectName && r.topicName) {
+            try {
+                // 1. Get or Create Domain (Community)
+                const { data: domain } = await supabase.from("domains").select("id").eq("name", "Community").single();
+                let domainId = domain?.id;
+                if (!domainId) {
+                    const { data: newDomain } = await supabase.from("domains").insert({
+                        name: "Community",
+                        description: "User contributed resources",
+                        icon: "Users"
+                    }).select("id").single();
+                    domainId = newDomain?.id;
+                }
+
+                // 2. Get or Create Subject
+                const { data: subject } = await supabase.from("subjects").select("id").eq("name", r.subjectName).single();
+                let subjectId = subject?.id;
+                if (!subjectId) {
+                    const { data: newSub } = await supabase.from("subjects").insert({
+                        domain_id: domainId || "22222222-2222-2222-2222-222222222222",
+                        name: r.subjectName,
+                        icon: "Book",
+                        color: "primary"
+                    }).select("id").single();
+                    subjectId = newSub?.id;
+                }
+
+                // 3. Get or Create Topic
+                const { data: topic } = await supabase.from("topics").select("id").eq("name", r.topicName).eq("subject_id", subjectId).single();
+                let finalTopicId = topic?.id;
+                if (!finalTopicId) {
+                    const { data: newTopic } = await supabase.from("topics").insert({
+                        subject_id: subjectId,
+                        name: r.topicName,
+                        description: `User contributed for ${r.subjectName}`
+                    }).select("id").single();
+                    finalTopicId = newTopic?.id;
+                }
+
+                if (finalTopicId) topicId = finalTopicId;
+            } catch (err) {
+                console.error("Resolution failed, attempting direct insert (may fail):", err);
+            }
+        }
+
         const { error } = await supabase.from("resources").insert([{
-            topic_id: r.topicId, // This might be a name now, backend needs to handle or use an 'other' bucket
+            topic_id: topicId,
             title: r.title,
             type: r.type,
             author: r.author,

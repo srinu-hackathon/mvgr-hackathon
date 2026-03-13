@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import PageHeader from "@/components/PageHeader";
 import { api } from "@/services/api";
 import type { ResourceType } from "@/types";
+import { useToast } from "@/hooks/use-toast";
 
 type Mode = "file" | "link";
 
@@ -35,6 +36,8 @@ const UploadPage = () => {
 
   // Removed subjects/topics queries for direct text input flow
 
+  const { toast } = useToast();
+
   const uploadMutation = useMutation({
     mutationFn: async () => {
       // Simulate mapping correct inputs
@@ -49,24 +52,37 @@ const UploadPage = () => {
         if (match) youtubeId = match[1];
       }
 
+      // We pass Subject and Topic names for resolution
       await api.uploadResource({
         title,
         description,
         type,
         url: finalUrl,
         youtubeId,
-        topicId: selectedTopic,
-        author: "Student User", // Mapped from active logged in user typically
+        topicId: selectedTopic, // This is the topic name
+        author: "Student User",
         source: mode === "file" ? "Community" : "External Link",
+        // Extended metadata for the API to handle resolution
+        subjectName: selectedSubject,
+        topicName: selectedTopic,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pending"] });
       setSubmitted(true);
+      toast({ title: "Success", description: "Resource submitted for review!" });
       setTimeout(() => {
         setSubmitted(false);
         setTitle(""); setSelectedSubject(""); setSelectedTopic(""); setFile(null); setUrl(""); setDescription("");
       }, 4000);
+    },
+    onError: (err: any) => {
+      console.error("Submission failed:", err);
+      toast({
+        title: "Submission Failed",
+        description: err.message || "Failed to submit. Topic ID must be a valid UUID in Database.",
+        variant: "destructive",
+      });
     }
   });
 
