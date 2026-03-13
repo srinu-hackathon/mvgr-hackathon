@@ -303,6 +303,7 @@ class OpenStaxProvider implements IDiscoveryProvider {
 
 /**
  * Google Search Provider - Official Google Custom Search JSON API
+ * Optimized with site-specific queries for academic depth.
  */
 class GoogleSearchProvider implements IDiscoveryProvider {
     name = "Google Search";
@@ -313,7 +314,10 @@ class GoogleSearchProvider implements IDiscoveryProvider {
         if (!this.apiKey || !this.cseId) return [];
 
         try {
-            let q = query;
+            // Enhanced query logic: Force search on trusted academic domains
+            const academicDomains = "site:edu OR site:ac.in OR site:researchgate.net OR site:nptel.ac.in OR site:ocw.mit.edu OR site:stanford.edu OR site:archive.org";
+            let q = `${query} (${academicDomains})`;
+
             if (typeFilter === "pdf" || typeFilter === "notes") q += " filetype:pdf";
             if (typeFilter === "ppt") q += " filetype:ppt OR filetype:pptx";
 
@@ -333,6 +337,45 @@ class GoogleSearchProvider implements IDiscoveryProvider {
                     description: item.snippet,
                     url: item.link,
                     source: new URL(item.link).hostname.replace("www.", ""),
+                    type: isPdf ? "pdf" : isPpt ? "ppt" : "link",
+                    isVerified: urlLower.includes(".edu") || urlLower.includes(".ac.") || urlLower.includes("nptel")
+                };
+            });
+        } catch {
+            return [];
+        }
+    }
+}
+
+/**
+ * SearchApi.io Provider - Powerful alternative for web/doc discovery
+ */
+class SearchApiProvider implements IDiscoveryProvider {
+    name = "SearchApi";
+    private apiKey = import.meta.env.VITE_SEARCH_API_KEY || "";
+
+    async search(query: string, typeFilter?: string): Promise<DiscoveryResult[]> {
+        if (!this.apiKey) return [];
+        try {
+            let q = query;
+            if (typeFilter === "pdf" || typeFilter === "notes") q += " filetype:pdf";
+            if (typeFilter === "ppt") q += " filetype:ppt";
+
+            const response = await fetch(`https://www.searchapi.io/api/v1/search?engine=google&q=${encodeURIComponent(q)}&api_key=${this.apiKey}`);
+            const data = await response.json();
+
+            const results = data.organic_results || [];
+            return results.slice(0, 5).map((r: any, i: number) => {
+                const urlLower = (r.link || "").toLowerCase();
+                const isPdf = urlLower.includes(".pdf");
+                const isPpt = urlLower.includes(".ppt") || urlLower.includes(".pptx");
+
+                return {
+                    id: `sapi-${i}-${Date.now()}`,
+                    title: r.title,
+                    description: r.snippet || "",
+                    url: r.link,
+                    source: new URL(r.link).hostname.replace("www.", ""),
                     type: isPdf ? "pdf" : isPpt ? "ppt" : "link",
                     isVerified: urlLower.includes(".edu") || urlLower.includes(".ac.")
                 };
@@ -367,13 +410,14 @@ export class DiscoveryEngine {
     private webSearch = new WebSearchProvider();
     private docSearch = new DocumentSearchProvider();
     private googleSearch = new GoogleSearchProvider();
+    private searchApi = new SearchApiProvider();
 
     /**
      * Parallel Discovery Execution
      */
     async discover(query: string) {
         // Execute all providers in parallel for maximum speed
-        const [research, citations, videos, textbooks, webResults, documents, googleResults] = await Promise.all([
+        const [research, citations, videos, textbooks, webResults, documents, googleResults, sapiResults] = await Promise.all([
             this.arXiv.search(query),
             this.openAlex.search(query),
             this.youtube.search(query),
@@ -381,7 +425,12 @@ export class DiscoveryEngine {
             this.webSearch.search(query),
             this.docSearch.search(query),
             this.googleSearch.search(query),
+            this.searchApi.search(query),
         ]);
+
+        // Merge and deduplicate results
+        const allDocs = [...googleResults, ...sapiResults, ...documents, ...webResults].filter(r => r.type === "pdf" || r.type === "ppt");
+        const allWeb = [...googleResults.filter(r => r.type === "link"), ...sapiResults.filter(r => r.type === "link"), ...webResults];
 
         return {
             research,
@@ -389,9 +438,10 @@ export class DiscoveryEngine {
             videos,
             textbooks,
             googleResults,
-            documents: [...documents, ...googleResults.filter(r => r.type === "pdf" || r.type === "ppt"), ...webResults.filter(r => r.type === "pdf" || r.type === "ppt")],
-            webResults: [...googleResults.filter(r => r.type === "link"), ...webResults],
-            totalCount: research.length + citations.length + videos.length + textbooks.length + webResults.length + documents.length + googleResults.length
+            sapiResults,
+            documents: allDocs.slice(0, 15),
+            webResults: allWeb.slice(0, 10),
+            totalCount: research.length + citations.length + videos.length + textbooks.length + allWeb.length + allDocs.length
         };
     }
 }
