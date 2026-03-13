@@ -21,6 +21,7 @@ const mapDiscoveryToResource = (dr: DiscoveryResult): Resource => ({
   type: (dr.type === "link" ? "oer" : dr.type) as ResourceType,
   author: dr.author || dr.source || "External",
   source: dr.source,
+  youtubeId: dr.type === "video" ? dr.id : undefined,
   topicId: "", // Not applicable for external results
   rating: 0,
   upvotes: 0,
@@ -503,8 +504,6 @@ const SearchPage = () => {
                 </motion.div>
               )}
 
-
-
               {/* Main Discovery Results */}
               {!isDiscovering && discoveryResults && (
                 <div className="space-y-6 pb-10">
@@ -518,38 +517,8 @@ const SearchPage = () => {
                         <span className="ml-auto text-[10px] bg-red-50 text-red-600 font-bold px-2 py-0.5 rounded-full">YouTube</span>
                       </div>
                       <div className="space-y-3">
-                        {discoveryResults.videos.map(v => (
-                          <a key={v.id} href={v.url} target="_blank" rel="noreferrer"
-                            className="flex gap-3 bg-card rounded-xl p-2.5 border border-border hover:border-red-500/20 hover:shadow-md transition-all">
-                            <div className="h-16 w-28 shrink-0 bg-muted rounded-lg overflow-hidden relative">
-                              {v.thumbnail && <img src={v.thumbnail} className="h-full w-full object-cover" alt="" />}
-                              <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                                <Youtube className="h-6 w-6 text-white drop-shadow-lg" />
-                              </div>
-                            </div>
-                            <div className="min-w-0 py-1">
-                              <h4 className="text-sm font-bold text-foreground line-clamp-1">{v.title}</h4>
-                              <div className="flex items-center gap-2 mt-1.5">
-                                <div className="text-[9px] font-bold text-red-500">{v.author}</div>
-                                {v.stats && (
-                                  <>
-                                    <span className="text-[8px] text-muted-foreground/30">•</span>
-                                    <div className="text-[9px] font-medium text-muted-foreground flex items-center gap-1">
-                                      <span>{v.stats.views} views</span>
-                                    </div>
-                                    {v.stats.likes !== "0" && (
-                                      <>
-                                        <span className="text-[8px] text-muted-foreground/30">•</span>
-                                        <div className="text-[9px] font-medium text-muted-foreground flex items-center gap-1">
-                                          <span>{v.stats.likes} likes</span>
-                                        </div>
-                                      </>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </a>
+                        {discoveryResults.videos.map((v, i) => (
+                          <ResourceCard key={v.id} resource={mapDiscoveryToResource(v)} index={i} />
                         ))}
                       </div>
                       <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`} target="_blank" rel="noreferrer"
@@ -567,19 +536,9 @@ const SearchPage = () => {
                         <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Verified Textbooks</h3>
                         <span className="ml-auto text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">OpenStax</span>
                       </div>
-                      <div className="space-y-2">
-                        {sortedDocs.textbooks.map(p => (
-                          <a key={p.id} href={p.url} target="_blank" rel="noreferrer"
-                            className="flex items-center gap-3 bg-primary/5 rounded-xl px-4 py-3 border border-primary/15 hover:border-primary/40 transition-all">
-                            <div className="h-9 w-9 rounded-lg bg-primary/15 flex items-center justify-center text-primary shrink-0">
-                              <BookText className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="text-xs font-bold text-foreground truncate">{p.title}</h4>
-                              <p className="text-[10px] text-muted-foreground">{p.author} • Peer Reviewed</p>
-                            </div>
-                            <span className="text-[9px] bg-green-100 text-green-700 font-black px-2 py-0.5 rounded-full shrink-0 ml-auto">FREE</span>
-                          </a>
+                      <div className="space-y-3">
+                        {sortedDocs.textbooks.map((p, i) => (
+                          <ResourceCard key={p.id} resource={mapDiscoveryToResource(p)} index={i} />
                         ))}
                       </div>
                     </section>
@@ -592,16 +551,9 @@ const SearchPage = () => {
                         <BookOpen className="h-5 w-5 text-orange-500" />
                         <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Lecture Slide Decks</h3>
                       </div>
-                      <div className="space-y-2">
-                        {sortedDocs.ppts.map(p => (
-                          <a key={p.id} href={p.url} target="_blank" rel="noreferrer"
-                            className="flex items-center gap-3 bg-card rounded-xl px-4 py-3 border border-border hover:border-orange-500/30 transition-all">
-                            <div className="h-9 w-9 rounded-lg bg-orange-50 text-orange-500 flex items-center justify-center text-[10px] font-black shrink-0">PPT</div>
-                            <div className="min-w-0">
-                              <h4 className="text-xs font-bold text-foreground line-clamp-1">{p.title}</h4>
-                              <p className="text-[10px] text-muted-foreground truncate">{p.description}</p>
-                            </div>
-                          </a>
+                      <div className="space-y-3">
+                        {sortedDocs.ppts.map((p, i) => (
+                          <ResourceCard key={p.id} resource={mapDiscoveryToResource(p)} index={i} />
                         ))}
                       </div>
                     </section>
